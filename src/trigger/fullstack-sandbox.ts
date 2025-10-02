@@ -32,17 +32,24 @@ export const fullStackInSandbox = task({
       messages: [
         {
           role: "user",
-          content: `Create a complete, beautiful, production-ready Next.js application for: "${prompt}"
+          content: `Create a simple, functional Next.js application for: "${prompt}"
 
 Requirements:
-- Modern Next.js 14 with App Router
-- TypeScript
-- Tailwind CSS for styling
-- Make it fully functional and interactive
-- Include proper styling and responsive design
-- All code should be in a single page.tsx file for simplicity
+- Use only basic React/Next.js features (no external libraries)
+- TypeScript for type safety
+- Tailwind CSS for styling (already included)
+- Keep the code simple and maintainable
+- Use only standard HTML elements and icons (no external icon libraries)
+- All code must be in a single page.tsx file
+- Must work without any additional npm packages beyond the basics (next, react, react-dom)
+- Use emojis or UTF-8 symbols for icons instead of external icon libraries
 
-IMPORTANT: Return ONLY the raw TypeScript React code. Do not include any markdown formatting, code block markers (like \`\`\`), or explanations. The response should start directly with either 'use client' or import statements.`,
+IMPORTANT: 
+1. Do NOT use any external libraries beyond Next.js, React, and Tailwind
+2. Use simple state management with useState
+3. Return ONLY the raw TypeScript React code
+4. Start directly with 'use client' or import statements
+5. No markdown formatting or code block markers`,
         },
       ],
     });
@@ -92,7 +99,7 @@ IMPORTANT: Return ONLY the raw TypeScript React code. Do not include any markdow
         dependencies: {
           next: "14.2.18",
           react: "^18.3.0",
-          "react-dom": "^18.3.0",
+          "react-dom": "^18.3.0"
         },
         devDependencies: {
           "@types/node": "^20",
