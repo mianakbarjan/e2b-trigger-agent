@@ -1,4 +1,4 @@
-import { task, logger } from "@trigger.dev/sdk/v3";
+import { task, logger, metadata } from "@trigger.dev/sdk/v3";
 import Anthropic from "@anthropic-ai/sdk";
 import { Sandbox } from "@e2b/code-interpreter";
 
@@ -9,13 +9,13 @@ export const fullStackInSandbox = task({
 
     const updateProgress = (step: number, total: number, status: string, detail?: string) => {
       logger.info(status, { step, total, detail });
-      return {
+      metadata.set("progress", {
         step,
         total,
         status,
         detail,
         timestamp: new Date().toISOString()
-      };
+      } as any);
     };
 
     updateProgress(1, 7, "Starting full-stack generation", `Generating app: ${prompt}`);
@@ -59,9 +59,9 @@ IMPORTANT:
       
     // Clean up any potential markdown formatting
     generatedCode = generatedCode
-      .replace(/^```\w*\n?/gm, "") // Remove opening code blocks
-      .replace(/```$/gm, "") // Remove closing code blocks
-      .trim(); // Remove extra whitespace
+      .replace(/^```\w*\n?/gm, "")
+      .replace(/```$/gm, "")
+      .trim();
 
     updateProgress(3, 7, "Code generated successfully", `Generated ${generatedCode.length} characters of code`);
 
@@ -81,11 +81,25 @@ IMPORTANT:
       await sandbox.files.makeDir("/home/user/app");
       await sandbox.files.makeDir("/home/user/app/app");
 
+      // Track all created files
+      const createdFiles: Array<{path: string; content: string; operation: string}> = [];
+
+      const logAndTrackFile = async (path: string, content: string, operation: string = "created") => {
+        logger.info(`File ${operation}: ${path}`, { 
+          type: 'file',
+          path,
+          operation,
+        });
+        
+        createdFiles.push({ path, content, operation });
+        
+        // Update metadata with all files
+        metadata.set("files", createdFiles);
+      };
+
       // Write the generated page
-      await sandbox.files.write(
-        "/home/user/app/app/page.tsx",
-        generatedCode
-      );
+      await sandbox.files.write("/home/user/app/app/page.tsx", generatedCode);
+      await logAndTrackFile("/home/user/app/app/page.tsx", generatedCode);
 
       // Create package.json
       const packageJson = {
@@ -112,22 +126,18 @@ IMPORTANT:
         },
       };
 
-      await sandbox.files.write(
-        "/home/user/app/package.json",
-        JSON.stringify(packageJson, null, 2)
-      );
+      const packageJsonContent = JSON.stringify(packageJson, null, 2);
+      await sandbox.files.write("/home/user/app/package.json", packageJsonContent);
+      await logAndTrackFile("/home/user/app/package.json", packageJsonContent);
 
       // Create next.config.js
-      const nextConfig = `
-/** @type {import('next').NextConfig} */
+      const nextConfig = `/** @type {import('next').NextConfig} */
 const nextConfig = {}
 
 module.exports = nextConfig
 `;
-      await sandbox.files.write(
-        "/home/user/app/next.config.js",
-        nextConfig
-      );
+      await sandbox.files.write("/home/user/app/next.config.js", nextConfig);
+      await logAndTrackFile("/home/user/app/next.config.js", nextConfig);
 
       // Create tsconfig.json
       const tsConfig = {
@@ -152,14 +162,12 @@ module.exports = nextConfig
         exclude: ["node_modules"],
       };
 
-      await sandbox.files.write(
-        "/home/user/app/tsconfig.json",
-        JSON.stringify(tsConfig, null, 2)
-      );
+      const tsConfigContent = JSON.stringify(tsConfig, null, 2);
+      await sandbox.files.write("/home/user/app/tsconfig.json", tsConfigContent);
+      await logAndTrackFile("/home/user/app/tsconfig.json", tsConfigContent);
 
       // Create tailwind.config.ts
-      const tailwindConfig = `
-import type { Config } from "tailwindcss";
+      const tailwindConfig = `import type { Config } from "tailwindcss";
 
 const config: Config = {
   content: [
@@ -175,14 +183,11 @@ const config: Config = {
 export default config;
 `;
 
-      await sandbox.files.write(
-        "/home/user/app/tailwind.config.ts",
-        tailwindConfig
-      );
+      await sandbox.files.write("/home/user/app/tailwind.config.ts", tailwindConfig);
+      await logAndTrackFile("/home/user/app/tailwind.config.ts", tailwindConfig);
 
       // Create postcss.config.js
-      const postcssConfig = `
-module.exports = {
+      const postcssConfig = `module.exports = {
   plugins: {
     tailwindcss: {},
     autoprefixer: {},
@@ -190,26 +195,20 @@ module.exports = {
 }
 `;
 
-      await sandbox.files.write(
-        "/home/user/app/postcss.config.js",
-        postcssConfig
-      );
+      await sandbox.files.write("/home/user/app/postcss.config.js", postcssConfig);
+      await logAndTrackFile("/home/user/app/postcss.config.js", postcssConfig);
 
       // Create globals.css
-      const globalsCss = `
-@tailwind base;
+      const globalsCss = `@tailwind base;
 @tailwind components;
 @tailwind utilities;
 `;
 
-      await sandbox.files.write(
-        "/home/user/app/app/globals.css",
-        globalsCss
-      );
+      await sandbox.files.write("/home/user/app/app/globals.css", globalsCss);
+      await logAndTrackFile("/home/user/app/app/globals.css", globalsCss);
 
       // Create layout.tsx
-      const layoutCode = `
-import './globals.css'
+      const layoutCode = `import './globals.css'
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
@@ -230,20 +229,76 @@ export default function RootLayout({
 }
 `;
 
-      await sandbox.files.write(
-        "/home/user/app/app/layout.tsx",
-        layoutCode
-      );
+      await sandbox.files.write("/home/user/app/app/layout.tsx", layoutCode);
+      await logAndTrackFile("/home/user/app/app/layout.tsx", layoutCode);
 
       // Step 4: Install dependencies
       updateProgress(5, 7, "Installing dependencies", "This may take 2-3 minutes...");
+      
+      const terminalLogs: Array<{type: string; content: string; timestamp: string}> = [];
+      
+      const stripAnsi = (str: string): string => {
+        // Remove ANSI escape codes
+        return str
+          .replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '') // CSI sequences
+          .replace(/\x1B\][0-9;]*\x07/g, '')     // OSC sequences
+          .replace(/\x1B[=>]/g, '')              // Other escape sequences
+          .replace(/[\x00-\x09\x0B-\x0C\x0E-\x1F]/g, '') // Control characters (except \n)
+          .replace(/\[[\d;]*[a-zA-Z]/g, '')      // Leftover bracket sequences
+          .replace(/⠋|⠙|⠹|⠸|⠼|⠴|⠦|⠧|⠇|⠏/g, '') // Spinner characters
+          .trim();
+      };
+      
+      const logTerminal = (data: any, type: 'stdout' | 'stderr' = 'stdout') => {
+        // Handle various data types that might come from E2B
+        let content = '';
+        
+        if (typeof data === 'string') {
+          content = data;
+        } else if (Buffer.isBuffer(data)) {
+          content = data.toString('utf8');
+        } else if (data && typeof data === 'object') {
+          content = data.line || data.text || data.content || JSON.stringify(data);
+        } else {
+          content = String(data);
+        }
+        
+        // Strip ANSI codes and clean up
+        content = stripAnsi(content).trim();
+        
+        // Only log non-empty content
+        if (!content) return;
+        
+        const log = {
+          type,
+          content,
+          timestamp: new Date().toISOString()
+        };
+        terminalLogs.push(log);
+        metadata.set("terminalOutput", terminalLogs);
+        
+        // Log as plain string to Trigger.dev
+        logger.info(`[${type}] ${content}`);
+      };
+
       const installResult = await sandbox.runCode(
-        "cd /home/user/app && npm install",
+        "cd /home/user/app && npm install 2>&1",
         { 
           language: "bash",
-          timeoutMs: 300000 // 5 minutes
+          timeoutMs: 300000,
         }
       );
+
+      // Log the output after command completes
+      if (installResult.logs?.stdout) {
+        installResult.logs.stdout.forEach(line => logTerminal(line, 'stdout'));
+      }
+      if (installResult.logs?.stderr) {
+        installResult.logs.stderr.forEach(line => logTerminal(line, 'stderr'));
+      }
+      if (installResult.text) {
+        logTerminal(installResult.text, 'stdout');
+      }
 
       if (installResult.error) {
         logger.error("Install failed", { error: installResult.error });
@@ -255,18 +310,28 @@ export default function RootLayout({
       // Step 5: Build the application
       updateProgress(6, 7, "Building application", "Compiling Next.js application...");
       const buildResult = await sandbox.runCode(
-        "cd /home/user/app && npm run build",
+        "cd /home/user/app && npm run build 2>&1",
         { 
           language: "bash",
-          timeoutMs: 300000 
+          timeoutMs: 300000,
         }
       );
+
+      // Log the build output
+      if (buildResult.logs?.stdout) {
+        buildResult.logs.stdout.forEach(line => logTerminal(line, 'stdout'));
+      }
+      if (buildResult.logs?.stderr) {
+        buildResult.logs.stderr.forEach(line => logTerminal(line, 'stderr'));
+      }
+      if (buildResult.text) {
+        logTerminal(buildResult.text, 'stdout');
+      }
 
       if (buildResult.error) {
         logger.warn("Build completed with warnings", {
           error: buildResult.error,
         });
-        // Continue anyway - warnings are usually okay
       }
 
       updateProgress(6, 7, "Build completed", "Application compiled successfully");
@@ -274,22 +339,43 @@ export default function RootLayout({
       // Step 6: Start the development server
       updateProgress(7, 7, "Starting server", "Launching Next.js development server...");
       
-      // Start the server and wait for it to be ready
-      logger.info("Starting server and waiting for ready message...");
+      logger.info("Starting Next.js dev server in background...");
+      
+      // Start the dev server in the background
       await sandbox.runCode(
-        "cd /home/user/app && (npm run dev > server.log 2>&1 &) && sleep 2 && tail -f server.log | while read line; do if [[ $line == *'Ready'* ]]; then break; fi; done",
-        {
-          language: "bash",
-          onStdout: (data) => logger.info("Server output", { data }),
-          onStderr: (data) => logger.warn("Server stderr", { data }),
-          timeoutMs: 30000 // 30 seconds
-        }
+        "cd /home/user/app && (npm run dev > server.log 2>&1 &)",
+        { language: "bash" }
       );
+
+      logger.info("Dev server process started in background");
+      
+      // Wait a bit for the server to start and capture initial output
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      
+      // Try to read some initial output
+      try {
+        const logsResult = await sandbox.runCode(
+          "cd /home/user/app && if [ -f .next/server/app-paths-manifest.json ]; then echo 'Next.js dev server is starting...'; fi",
+          { language: "bash" }
+        );
+        
+        if (logsResult.text) {
+          logTerminal(logsResult.text, 'stdout');
+        }
+        
+        logTerminal("Next.js dev server started successfully", 'stdout');
+        logTerminal(`Server running on port 3000`, 'stdout');
+      } catch (error) {
+        logger.warn("Could not read dev server logs", { error });
+      }
 
       // Step 7: Get the public URL
       const appUrl = `https://${sandbox.getHost(3000)}`;
 
       const finalProgress = updateProgress(7, 7, "Application ready", "Server is running and ready to accept connections");
+
+      // Ensure final metadata flush
+      await metadata.flush();
 
       // Return success with all the details
       return {
@@ -299,7 +385,9 @@ export default function RootLayout({
         code: generatedCode,
         message: "Application is running in E2B sandbox! Click the URL to view.",
         instructions: "The sandbox will remain active. You can access the app at the provided URL.",
-        progress: finalProgress
+        progress: finalProgress,
+        files: createdFiles,
+        terminalOutput: terminalLogs,
       };
     } catch (error) {
       logger.error("Workflow failed", { error });

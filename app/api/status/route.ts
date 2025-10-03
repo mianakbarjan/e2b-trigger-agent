@@ -22,35 +22,24 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get the latest progress from the logs
-    const logs = run.output?.logs || [];
-    interface Log {
-      metadata?: { step?: number; total?: number; detail?: string };
-      message: string;
-      timestamp: string;
-    }
-    
-    const progressLogs = logs
-      .filter((log: Log) => log.metadata?.step !== undefined)
-      .map((log: Log) => ({
-        step: log.metadata!.step,
-        total: log.metadata!.total,
-        status: log.message,
-        detail: log.metadata!.detail,
-        timestamp: log.timestamp
-      }))
-      .sort((a: { step: number }, b: { step: number }) => b.step - a.step);
-
-    const latestProgress = progressLogs[0];
+    // Extract metadata - this is where files and terminal output are stored
+    const metadata = run.metadata || {};
+    const progress = metadata.progress || null;
+    const files = metadata.files || [];
+    const terminalOutput = metadata.terminalOutput || [];
 
     return NextResponse.json({
       status: run.status,
-      output: run.output,
+      output: {
+        appUrl: run.output?.appUrl,
+        message: run.output?.message,
+        sandboxId: run.output?.sandboxId,
+        progress: progress,
+        files: files,
+        terminalOutput: terminalOutput,
+      },
       error: run.error,
-      appUrl: run.output?.appUrl,
-      message: run.output?.message,
-      progress: latestProgress || run.output?.progress,
-      logs: progressLogs
+      metadata: metadata, // Include full metadata for debugging
     });
   } catch (error) {
     console.error("Error fetching job status:", error);
